@@ -1,0 +1,65 @@
+{% load custom_filters %}
+<html>
+<head>
+    <title>Retro Rumble Leaderboard</title>
+    <style>
+        table{
+            border-collapse: collapse;
+        }
+
+        table td{
+            border: 1px solid black;
+            padding: 5px 10px;
+        }
+
+        table th{
+            vertical-align: bottom;
+        }
+
+        td.total-score{
+            font-weight: bold;
+        }
+
+        td.score{
+            text-align: center;
+        }
+
+        a.player-link{
+            color: black;
+            text-decoration-line: underline;
+            text-decoration-style: dotted;
+        }
+    </style>
+</head>
+<body>
+    <h1>Retro Rumble Leaderboard</h1>
+    <h2>Last updated: {{last_run}}</h2>
+    {% if can_be_run %}
+    <p><a href="/leaderboard/update">Update Now</a></p>
+    {% else %}
+    <p>Data can be updated after 10 minutes</p>
+    {% endif %}
+    <table>
+        <thead>
+            <tr>
+                <th>Player</th>
+                <th>Total</th>
+                {% for game in games %}
+                <th><img src="http://retroachievements.org{{game.game_icon}}" title="{{game.name}}"></th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for player, scores in sorted_grouped_scores %}
+            <tr>
+                <td><a class="player-link" href="https://retroachievements.org/user/{{player.name}}?g=15">{{ player.name }}</a></td>
+                <td class="total-score">{{ scores|sum_scores }}</td>
+                {% for score in scores %}
+                <td class="score">{{ score.score|score_or_blank }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

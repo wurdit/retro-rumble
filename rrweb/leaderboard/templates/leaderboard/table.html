@@ -1,0 +1,32 @@
+<html>
+<head>
+    <title>Table Test</title>
+    <style>
+        table{
+            border-collapse: collapse !important;
+        }
+
+        table td{
+            border: 1px solid black !important;
+            padding: 2px 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Table Test</h1>
+    <table>
+        <tr>
+            {% for column in header %}
+            <th>{{column}}</th>
+            {% endfor %}
+        </tr>
+        {% for row in table %}
+        <tr>
+            {% for data in row %}
+            <td>{{data}}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

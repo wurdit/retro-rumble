@@ -1,0 +1,31 @@
+<html>
+<head>
+    <title>Retro Rumble Leaderboard</title>
+    <style>
+        table{
+            border-collapse: collapse !important;
+        }
+
+        table td{
+            border: 1px solid black !important;
+            padding: 2px 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Retro Rumble Leaderboard</h1>
+    {% if data %}
+    <table>
+        {% for item in data %}
+        <tr>
+            <td><a href="https://retroachievements.org/user/{{name}}?g=15">{{item.name}}</a></td>
+            <td>{{item.game_id}}</td>
+            <td>{{item.score}}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>No data is available.</p>
+    {% endif %}
+</body>
+</html>
