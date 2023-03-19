@@ -1,5 +1,3 @@
-import sys
-import os
 import json
 from datetime import date
 from datetime import datetime
@@ -21,25 +19,37 @@ class _NotReturned:
 
 NotReturned = _NotReturned() #that way it's always the same object
 
-def try_key_or_nr(d, k): #tries to return a value, else returns NotReturned
+def try_key_or_nr(d, k):
+    '''
+    Tries to return a value, else returns NotReturned
+    '''
     try:
         return d[k]
     except KeyError:
         return NotReturned
 
-def try_int_key_or_nr(d, k): #tries to return an int value, else returns NotReturned
+def try_int_key_or_nr(d, k): #
+    '''
+    Tries to return an int value, else returns NotReturned
+    '''
     try:
         return int(d[k])
     except KeyError:
         return NotReturned
 
-def try_date_key_or_nr(d, k): #tries to return an int value, else returns NotReturned
+def try_date_key_or_nr(d, k):
+    '''
+    Tries to return a date value, else returns NotReturned
+    '''
     try:
         return get_utc_date_from_response_string((d[k]))
     except KeyError:
         return NotReturned
 
-def try_bool_key_or_nr(d, k): #tries to return an int value, else returns NotReturned
+def try_bool_key_or_nr(d, k):
+    '''
+    Tries to return a boolean value, else returns NotReturned. Treats both 1 and '1' as True.
+    '''
     try:
         value = (d[k])
         return True if value == 1 or value == '1' else False
@@ -83,25 +93,6 @@ class AchievementsEarnedBetween:
     
 class UserProgress:
     def __init__(self, game_id: int, data: dict):
-        '''
-        {
-        "676": {
-            "NumPossibleAchievements": 59,
-            "PossibleScore": "509",
-            "NumAchieved": 0,
-            "ScoreAchieved": 0,
-            "NumAchievedHardcore": 0,
-            "ScoreAchievedHardcore": 0
-        },
-        "1451": {
-            "NumPossibleAchievements": 84,
-            "PossibleScore": "800",
-            "NumAchieved": 36,
-            "ScoreAchieved": "245",
-            "NumAchievedHardcore": 36,
-            "ScoreAchievedHardcore": "245"
-        },
-        '''
         self.game_id = game_id
         self.num_possible = try_int_key_or_nr(data, 'NumPossibleAchievements')
         self.possible_score = try_int_key_or_nr(data, 'PossibleScore')
@@ -148,7 +139,6 @@ class RAclient:
         # We have to get the data in chunks. 14 days seems to be the max chunk, but we'll do 12 so it's ~3 even chunks
         increment = 12 * 24 * 60 * 60 # 10 days in sec
         start = startdate_unix
-        # start_date_s = datetime.utcfromtimestamp(start).strftime('%Y-%m-%d %H:%M:%S')
         data = AchievementsEarnedBetween()
 
         now_unix = int(datetime.utcnow().timestamp())
@@ -157,7 +147,6 @@ class RAclient:
 
         while start <= enddate_unix:
             end = start + increment
-            # end_date_s = datetime.utcfromtimestamp(end).strftime('%Y-%m-%d %H:%M:%S')
             params = {
                 'u': player,
                 'f': start,
@@ -171,7 +160,6 @@ class RAclient:
                 converted_max_date = get_utc_date_from_response_string(max_date)
                 converted_max_date_ts = converted_max_date.timestamp()
                 start = int(converted_max_date_ts) + 1
-                # start_date_s = datetime.utcfromtimestamp(start).strftime('%Y-%m-%d %H:%M:%S')
             else:
                 # since we didn't hit the 500 record limit, set start = end + 1
                 start = end + 1
@@ -187,44 +175,10 @@ class RAclient:
         raw_data = self.make_request(Endpoints.GetUserProgress, params)
         return [UserProgress(int(k), v) for (k, v) in raw_data]
 
-def leaderboard(client: RAclient, players: list, game_ids: list, start_unix_time: int, end_unix_time: int):    
-    leaderboard = {player: 0 for player in players}
-
-    start, end = start_unix_time, end_unix_time
-
-    local_tz = pytz.timezone('US/Eastern')
-    start_date = pytz.utc.localize(datetime.utcfromtimestamp(start)).astimezone(local_tz)
-    end_date = pytz.utc.localize(datetime.utcfromtimestamp(end)).astimezone(local_tz)
-
-    print(f'Getting achievments between \n\
-{start_date.strftime("%Y-%m-%d %H:%M:%S")} EST and \n\
-{end_date.strftime("%Y-%m-%d %H:%M:%S")} EST \n\
-for games: {game_ids} \n\
-for players: {players}"')
-
-    for player in players:
-        data = client.get_achievements_earned_between(player, start, end)
-
-        for game_id in game_ids:
-            progress = data.get_progress(game_id)
-            print(f'{player}, {game_id}: {progress}')
-            leaderboard[player] += progress
-        print()
-
-    for player in sorted(((v,k) for k,v in leaderboard.items()), reverse=True):
-        print(f'{player[1]} ({player[0]})')
-
 def get_login():
     username = Setting.objects.filter(name='username')[0].value
     api_key = Setting.objects.filter(name='api_key')[0].value
     return (username, api_key)
-
-if __name__ == '__main__':
-    username, api_key = get_login()
-    client = RAclient(username, api_key)
-    data = client.get_user_progress('monozaki', [676,710,1451,2826,3585,11264,11283,11329])
-    for progress in data:
-        print(progress)
 
 
     
