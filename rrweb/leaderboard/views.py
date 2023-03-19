@@ -17,7 +17,6 @@ MIN_UPDATE_INTERVAL_SECONDS = 60 * 10
 
 def is_update_allowed():
     last_run = Setting.objects.filter(name='last_run')[0]
-    # tz = pytz.timezone(timezone.get_current_timezone_name())
     last_run_date = pytz.utc.localize(datetime.strptime(last_run.value, DATE_FORMAT))
     utc_now = pytz.utc.localize(datetime.utcnow())
 
@@ -32,18 +31,6 @@ def get_login():
     username = Setting.objects.filter(name='username')[0].value
     api_key = Setting.objects.filter(name='api_key')[0].value
     return (username, api_key)
-
-def test_sort(request):
-    scores = PlayerScore.objects.filter(game__challenge__id=2, player__is_active=True).order_by('player_id', 'game__retro_game_id').select_related('player', 'game')
-    grouped_scores = [(key, list(group)) for key, group in groupby(scores, key=lambda x: x.player)]
-    sorted_data = sorted(grouped_scores, key=lambda x: sum([score.score for score in x[1]]), reverse=True)
-
-    for player, scores in sorted_data:
-        print(player)
-        for score in scores:
-            print(f'{player.name}, {score.game.name}: {score.score}')
-        
-    return HttpResponse('Didn''t crash') 
 
 def table_test(request):
     template = loader.get_template('leaderboard/table.html')
@@ -63,9 +50,6 @@ class LeaderBoardEntry():
 def index(request):
     can_be_run, last_run, natural_time = is_update_allowed()
 
-    # last_run.value = '1970-01-01 00:00:00'
-    # last_run.save()
-
     challenge_id = get_max_challenge_id()
 
     games = Game.objects.filter(challenge__id=challenge_id).order_by('retro_game_id')
@@ -73,11 +57,6 @@ def index(request):
 
     grouped_scores = [(key, list(group)) for key, group in groupby(scores, key=lambda x: x.player)]
     sorted_grouped_scores = sorted(grouped_scores, key=lambda x: sum([score.score for score in x[1]]), reverse=True)
-
-
-    # summed_data = [(name, sum(score.score for score in scores)) for name, scores in grouped_scores]
-    # sorted_data = sorted([(v, k) for k, v in summed_data], reverse=True)
-    # leaderboard = [f'{item[1]} ({item[0]})' for item in sorted_data]
 
     template = loader.get_template('leaderboard/index.html')
     context = {
@@ -87,21 +66,6 @@ def index(request):
         'can_be_run': can_be_run
     }
     return HttpResponse(template.render(context, request))
-
-# class DebugItem():
-#     def __init__(self, name, game_id, score) -> None:
-#         self.name = name
-#         self.game_id = game_id
-#         self.score = score
-
-# def debug(request):
-#     data = list()
-
-#     template = loader.get_template('leaderboard/index.html')
-#     context = {
-#         'data': data
-#     }
-#     return HttpResponse(template.render(context, request))
 
 def update(request):
     can_be_run, last_run, natural_time = is_update_allowed()
