@@ -169,11 +169,14 @@ class RAclient:
     def get_user_progress(self, player: str, game_ids: list[int]):
         params = {
             'u': player,
-            'i': ",".join(game_ids)
+            'i': ",".join((str(game_id) for game_id in game_ids))
         }
-        print(params['i'])
         raw_data = self.make_request(Endpoints.GetUserProgress, params)
-        return [UserProgress(int(k), v) for (k, v) in raw_data]
+        progress = dict()
+        for key, value in raw_data.items():
+            game_id = int(key)
+            progress[game_id] = UserProgress(game_id, value)
+        return progress
 
 def get_login():
     username = Setting.objects.filter(name='username')[0].value

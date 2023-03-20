@@ -75,26 +75,45 @@ def update(request):
     else:
         last_run.value = timezone.now().strftime(DATE_FORMAT)
         last_run.save()
-        refresh_leaderboard()
+        refresh_leaderboard_fast()
         return redirect('/leaderboard', permanent=False)
     
 def get_max_challenge_id():
     challenge_id = max_id = Challenge.objects.aggregate(Max('id'))['id__max']
     return challenge_id
     
-def refresh_leaderboard():
+def refresh_leaderboard_fast():
     challenge_id = get_max_challenge_id()
     challenge = Challenge.objects.get(pk=challenge_id)
-    games = challenge.game_set.all()
-    print(games)
+    games = challenge.game_set.all().order_by('retro_game_id')
+    # print(games)
 
     players = Player.objects.filter(is_active=True)
-    print(players)
+    # print(players)
 
     username, api_key = get_login()
     client = RAclient(username, api_key)
 
-    leaderboard = {player_name: 0 for player_name in [p.name for p in players]}
+    for player in players:
+        results = client.get_user_progress(player.name, [game.retro_game_id for game in games] )
+
+        for game in games:
+            progress = results[game.retro_game_id]
+            print(f'{player.name}, {progress.game_id}: {progress.score_achieved_hardcore}')
+            update_player_score(player, game, progress.score_achieved_hardcore)
+        print()
+    
+def refresh_leaderboard_accurate():
+    challenge_id = get_max_challenge_id()
+    challenge = Challenge.objects.get(pk=challenge_id)
+    games = challenge.game_set.all()
+    # print(games)
+
+    players = Player.objects.filter(is_active=True)
+    # print(players)
+
+    username, api_key = get_login()
+    client = RAclient(username, api_key)
 
     for player in players:
         data = client.get_achievements_earned_between(player.name, challenge.start, challenge.end)
@@ -102,22 +121,18 @@ def refresh_leaderboard():
         for game in games:
             progress = data.get_progress(game.retro_game_id)
             print(f'{player.name}, {game.retro_game_id}: {progress}')
-            leaderboard[player.name] += progress
             update_player_score(player, game, progress)
         print()
-
-    for player in sorted(((v,k) for k,v in leaderboard.items()), reverse=True):
-        print(f'{player[1]} ({player[0]})')
 
 def update_player_score(player: Player, game: Game, score: int):
     player_score = PlayerScore()
     try:
         player_score = PlayerScore.objects.get(player_id=player.pk, game_id=game.pk)
-        print(f'Player score for {player.name} and game {game.retro_game_id} exists. Updating...')
+        print(f'Updating {player_score}')
     except PlayerScore.DoesNotExist:
         player_score.player = player
         player_score.game = game
-        print(f'Player score for {player.name} and game {game.retro_game_id} does NOT exist. Creating...')
+        print(f'Creating {player_score}')
 
     player_score.score = score
     player_score.save()
