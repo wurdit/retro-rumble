@@ -1,5 +1,7 @@
 from django.db import models
 
+DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
+
 class Player(models.Model):
     name = models.CharField(max_length=50, unique=True)
     is_active = models.BooleanField(default=True)
@@ -42,3 +44,16 @@ class Setting(models.Model):
 
     def __str__(self):
         return f'{self.name}: {self.value if self.name != "api_key" else "xxxxxxxxxxxxxxxxxxxxxxxxxxxx"}'
+    
+class Achievement(models.Model):
+    player = models.ForeignKey(Player, on_delete=models.CASCADE)
+    game = models.ForeignKey(Game, on_delete=models.CASCADE)
+    achievement_id = models.IntegerField()
+    title = models.CharField(max_length=100)
+    description = models.CharField(max_length=500)
+    date = models.DateTimeField()
+    hardcore = models.BooleanField()
+    points = models.IntegerField()
+
+    def __str__(self) -> str:
+        return f'{self.achievement_id}: {self.date.strftime(DATE_FORMAT)}, {self.points} {"(Hardcore)" if self.hardcore else ""}'
