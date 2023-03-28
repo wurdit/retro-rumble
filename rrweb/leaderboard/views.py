@@ -8,8 +8,10 @@ from django.http import HttpResponse
 from django.template import loader
 from django.utils import timezone
 from django.core.exceptions import PermissionDenied
-from django.db.models import Max
-from leaderboard.models import Player, Game, Challenge, PlayerScore, Setting
+from django.db.models import Max, Sum
+from django.db import transaction
+from django.contrib.admin.views.decorators import staff_member_required
+from leaderboard.models import Player, Game, Challenge, PlayerScore, Setting, Achievement
 from .retro import RAclient
 
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
@@ -75,68 +77,89 @@ def update(request):
     else:
         last_run.value = timezone.now().strftime(DATE_FORMAT)
         last_run.save()
-        refresh_leaderboard_fast()
+        challenge_id = get_max_challenge_id()
+        refresh_leaderboard_smart(challenge_id)
         return redirect('/leaderboard', permanent=False)
     
 def get_max_challenge_id():
-    challenge_id = max_id = Challenge.objects.aggregate(Max('id'))['id__max']
+    challenge_id = Challenge.objects.aggregate(Max('id'))['id__max']
     return challenge_id
-    
-def refresh_leaderboard_fast():
-    challenge_id = get_max_challenge_id()
-    challenge = Challenge.objects.get(pk=challenge_id)
-    games = challenge.game_set.all().order_by('retro_game_id')
-    # print(games)
 
+@transaction.atomic
+def refresh_leaderboard_smart(challenge_id: int):
+    challenge = Challenge.objects.get(pk=challenge_id)
+    games = Game.objects.filter(challenge__id=challenge.pk).order_by('retro_game_id')
     players = Player.objects.filter(is_active=True)
-    # print(players)
+    player_scores = PlayerScore.objects.filter(game__challenge__id=challenge_id).select_related('game')
+
+    players_needing_update = list()
+    # Store individual player progress for updating PlayerScores later
+    players_progress = dict()
 
     username, api_key = get_login()
     client = RAclient(username, api_key)
 
     for player in players:
-        results = client.get_user_progress(player.name, [game.retro_game_id for game in games] )
+        user_progress = client.get_user_progress(player.name, [game.retro_game_id for game in games] )
+        players_progress[player.name] = user_progress
 
         for game in games:
-            progress = results[game.retro_game_id]
-            print(f'{player.name}, {progress.game_id}: {progress.score_achieved_hardcore}')
-            update_player_score(player, game, progress.score_achieved_hardcore)
-        print()
+            game_progress = user_progress[game.retro_game_id]
+            player_score = player_scores.filter(player_id=player.pk, game_id=game.pk).first()
+            if not player_score or player_score.raw_score != game_progress.score_achieved_hardcore:
+                players_needing_update.append(player)
+                break
     
-def refresh_leaderboard_accurate():
-    challenge_id = get_max_challenge_id()
-    challenge = Challenge.objects.get(pk=challenge_id)
-    games = challenge.game_set.all()
-    # print(games)
+    scores_to_update = list()
+    scores_to_create = list()
 
-    players = Player.objects.filter(is_active=True)
-    # print(players)
+    for player in players_needing_update:
+        max_date = Achievement.objects.filter(player_id=player.pk).aggregate(Max('id'))['id__max']
+        # Only get achievments starting 1s after the date of the latest achievement, if any.
+        start = max_date.timestamp() + 1 if max_date else challenge.start
+        achievements_earned_between = client.get_achievements_earned_between(player.name, start, challenge.end)
+        achievements_to_store = list()
 
-    username, api_key = get_login()
-    client = RAclient(username, api_key)
+        for remote_achievement in achievements_earned_between.achievements:
+            # TODO: Should probably check the remote_achievement for missing data
+            game = games.filter(retro_game_id=remote_achievement.game_id).first()
+            # Don't store achievements for games not in the challenge
+            if game:
+                achievement = Achievement()
+                achievement.player = player
+                achievement.game = game
+                achievement.achievement_id = remote_achievement.id
+                achievement.title = remote_achievement.title
+                achievement.description = remote_achievement.description
+                achievement.date = remote_achievement.date
+                achievement.hardcore = remote_achievement.hardcore
+                achievement.points = remote_achievement.points
+                achievements_to_store.append(achievement)
+        
+        Achievement.objects.bulk_create(achievements_to_store)
 
-    for player in players:
-        data = client.get_achievements_earned_between(player.name, challenge.start, challenge.end)
-
+        # Update PlayerScores
+        user_progress = players_progress[player.name]
         for game in games:
-            progress = data.get_progress(game.retro_game_id)
-            print(f'{player.name}, {game.retro_game_id}: {progress}')
-            update_player_score(player, game, progress)
-        print()
+            game_progress = user_progress[game.retro_game_id]
+            player_score = player_scores.filter(player_id=player.pk, game_id=game.pk).first()
+            if not player_score:
+                player_score = PlayerScore()
+                player_score.player = player
+                player_score.game = game
+                scores_to_create.append(player_score)
+            else:
+                scores_to_update.append(player_score)
+            hardcore_sum = Achievement.objects.filter(player=player, game=game, hardcore=True).aggregate(Sum('points'))['points__sum']
+            player_score.score = hardcore_sum or 0
+            player_score.raw_score = game_progress.score_achieved_hardcore    
+        
+    PlayerScore.objects.bulk_create(scores_to_create)
+    PlayerScore.objects.bulk_update(scores_to_update, ['score', 'raw_score'])
 
-def update_player_score(player: Player, game: Game, score: int):
-    player_score = PlayerScore()
-    try:
-        player_score = PlayerScore.objects.get(player_id=player.pk, game_id=game.pk)
-        print(f'Updating {player_score}')
-    except PlayerScore.DoesNotExist:
-        player_score.player = player
-        player_score.game = game
-        print(f'Creating {player_score}')
+    return ', '.join([player.name for player in players_needing_update])
 
-    player_score.score = score
-    player_score.save()
-
+@staff_member_required
 def import_players(request):
     response = ''
     with open(r'./players.csv', newline='') as csvfile:
@@ -146,9 +169,10 @@ def import_players(request):
             is_active = True if row[1].lower().strip() == 'true' else False
             player = Player(name=name, is_active=is_active)
             response += f'{player}</br>'
-            player.save() 
+            player.save()
     return HttpResponse(response)
 
+@staff_member_required
 def import_games(request):
     username = Setting.objects.filter(name='username')[0].value
     api_key = Setting.objects.filter(name='api_key')[0]
@@ -172,6 +196,7 @@ def import_games(request):
             game.save()
     return HttpResponse(response)
 
+@staff_member_required
 def refresh_games(request):
     username, api_key = get_login()
     client = RAclient(username, api_key)
