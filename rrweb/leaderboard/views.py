@@ -114,7 +114,7 @@ def refresh_leaderboard_smart(challenge_id: int):
     scores_to_create = list()
 
     for player in players_needing_update:
-        max_date = Achievement.objects.filter(player_id=player.pk).aggregate(Max('id'))['id__max']
+        max_date = Achievement.objects.filter(player_id=player.pk).aggregate(Max('date'))['date__max']
         # Only get achievments starting 1s after the date of the latest achievement, if any.
         start = max_date.timestamp() + 1 if max_date else challenge.start
         achievements_earned_between = client.get_achievements_earned_between(player.name, start, challenge.end)
