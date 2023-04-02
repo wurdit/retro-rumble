@@ -55,7 +55,7 @@ def index(request):
     challenge_id = get_max_challenge_id()
 
     games = Game.objects.filter(challenge__id=challenge_id).order_by('retro_game_id')
-    scores = PlayerScore.objects.filter(game__challenge__id=2, player__is_active=True).order_by('player_id', 'game__retro_game_id').select_related('player')
+    scores = PlayerScore.objects.filter(game__challenge__id=challenge_id, player__is_active=True).order_by('player_id', 'game__retro_game_id').select_related('player')
 
     grouped_scores = [(key, list(group)) for key, group in groupby(scores, key=lambda x: x.player)]
     sorted_grouped_scores = sorted(grouped_scores, key=lambda x: sum([score.score for score in x[1]]), reverse=True)
@@ -114,6 +114,7 @@ def refresh_leaderboard_smart(challenge_id: int):
     scores_to_create = list()
 
     for player in players_needing_update:
+        # print(player)
         max_date = Achievement.objects.filter(player_id=player.pk).aggregate(Max('date'))['date__max']
         # Only get achievments starting 1s after the date of the latest achievement, if any.
         start = max_date.timestamp() + 1 if max_date else challenge.start
@@ -202,7 +203,8 @@ def refresh_games(request):
     client = RAclient(username, api_key)
     response = ''
 
-    games = Game.objects.all()
+    challenge_id = get_max_challenge_id()
+    games = Game.objects.filter(challenge__id=challenge_id).order_by('retro_game_id')
 
     for game in games:
         data = client.get_game(game.retro_game_id)
